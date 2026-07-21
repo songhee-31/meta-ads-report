@@ -1020,7 +1020,7 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
 });
 document.getElementById('btnExcel').addEventListener('click', exportExcel);
 document.getElementById('btnHtml').addEventListener('click', exportHtmlSnapshot);
-document.getElementById('btnPdf').addEventListener('click', ()=>{ window.print(); });
+document.getElementById('btnPdf').addEventListener('click', exportPdf);
 
 function showReport(){
   document.getElementById('uploadScreen').hidden = true;
@@ -1091,7 +1091,6 @@ function renderWeekly(){
   html += kpiCard('CTR', fmtPct(agg.ctr));
   html += kpiCard('CPC', fmtWon(agg.cpc));
   html += kpiCard('전환수', fmtNum(convAgg.actionCount));
-  html += kpiCard('CPA', convAgg.actionCount ? fmtWon(convAgg.cpa) : '—');
   html += '</div></div>';
 
   if(shopTotal>0){
@@ -1130,7 +1129,7 @@ function weeklyEventSection(type, title, evList, rows, creatives, hasData){
   html += '<div class="table-wrap"><table><thead><tr>';
   html += '<th>캠페인</th><th>광고그룹</th><th>소재(광고명)</th><th class="num">노출</th><th class="num">클릭</th><th class="num">CTR</th><th class="num">지출</th><th class="num">CPC</th>';
   evList.forEach(e=> html += '<th class="num">'+esc(e.name)+'</th>');
-  html += '<th class="num">CPA</th>'+(showRoas?'<th class="num">ROAS</th>':'')+'<th>리마크</th></tr></thead><tbody>';
+  html += (showRoas?'<th class="num">ROAS</th>':'')+'<th>리마크</th></tr></thead><tbody>';
   relevant.forEach((c,i)=>{
     const key = 'w_'+type+'_'+c.campaign+'_'+c.adset+'_'+c.ad;
     html += '<tr>';
@@ -1146,7 +1145,6 @@ function weeklyEventSection(type, title, evList, rows, creatives, hasData){
       const ev = c.events[e.name] || {count:0};
       html += '<td class="num">'+fmtNum(ev.count)+'</td>';
     });
-    html += '<td class="num">'+(c.actionCount ? fmtWon(c.cpa) : '—')+'</td>';
     if(showRoas) html += '<td class="num">'+(c.spend ? fmtPct(c.roas,0) : '—')+'</td>';
     html += '<td><textarea class="remark-input" rows="1" data-key="'+esc(key)+'">'+esc(state.remarks[key]||'')+'</textarea></td>';
     html += '</tr>';
@@ -1194,7 +1192,6 @@ function renderMonthly(){
   html += kpiCard('CTR', fmtPct(agg.ctr), delta(agg.ctr, cmpAgg && cmpAgg.ctr, true));
   html += kpiCard('CPC', fmtWon(agg.cpc), delta(agg.cpc, cmpAgg && cmpAgg.cpc, false));
   html += kpiCard('전환수', fmtNum(convAgg.actionCount), delta(convAgg.actionCount, cmpConvAgg && cmpConvAgg.actionCount, true));
-  html += kpiCard('CPA', convAgg.actionCount?fmtWon(convAgg.cpa):'—', delta(convAgg.cpa, cmpConvAgg && cmpConvAgg.cpa, false));
   html += '</div></div>';
 
   if(dbTotal>0){
@@ -1246,8 +1243,8 @@ function renderCreativeSection(creatives, ds){
 
   const hasShopping = ds.events.some(e=>e.type==='shopping');
   if(conv.length){
-    const metricKey = hasShopping ? 'roas' : 'cpa';
-    const dir = hasShopping ? 'desc' : 'asc';
+    const metricKey = hasShopping ? 'roas' : 'actionCount';
+    const dir = 'desc';
     const th = state.thresholds || {primaryGood:null, primaryBad:null};
     let customClassify = null;
     if(thresholdsActive(th)){
@@ -1276,11 +1273,11 @@ function renderCreativeSection(creatives, ds){
     html += '<div class="empty-note">분석할 소재 데이터가 없습니다.</div>';
   }
 
-  html += '<div class="table-wrap" style="margin-top:14px"><table><thead><tr><th>캠페인</th><th>소재(광고명)</th><th class="num">노출</th><th class="num">클릭</th><th class="num">CTR</th><th class="num">지출</th><th class="num">CPC</th><th class="num">결과</th><th class="num">CPA</th>'+(hasShopping?'<th class="num">ROAS</th>':'')+'</tr></thead><tbody>';
+  html += '<div class="table-wrap" style="margin-top:14px"><table><thead><tr><th>캠페인</th><th>소재(광고명)</th><th class="num">노출</th><th class="num">클릭</th><th class="num">CTR</th><th class="num">지출</th><th class="num">CPC</th><th class="num">결과</th>'+(hasShopping?'<th class="num">ROAS</th>':'')+'</tr></thead><tbody>';
   creatives.slice().sort((a,b)=>b.spend-a.spend).forEach(c=>{
     html += '<tr><td class="sub-cell">'+esc(c.campaign)+'</td><td class="name-cell">'+esc(c.ad)+'</td>'
       +'<td class="num">'+fmtNum(c.impressions)+'</td><td class="num">'+fmtNum(c.clicks)+'</td><td class="num">'+fmtPct(c.ctr)+'</td>'
-      +'<td class="num">'+fmtWon(c.spend)+'</td><td class="num">'+(c.clicks?fmtWon(c.cpc):'—')+'</td><td class="num">'+fmtNum(c.results)+'</td><td class="num">'+(c.actionCount?fmtWon(c.cpa):'—')+'</td>'
+      +'<td class="num">'+fmtWon(c.spend)+'</td><td class="num">'+(c.clicks?fmtWon(c.cpc):'—')+'</td><td class="num">'+fmtNum(c.results)+'</td>'
       +(hasShopping?('<td class="num">'+(c.spend?fmtPct(c.roas,0):'—')+'</td>'):'')+'</tr>';
   });
   html += '</tbody></table></div>';
@@ -1320,7 +1317,7 @@ function computeInvestmentGuidance(creatives, ds, agg){
   const pool = investmentPool(conv);
   const totalSpend = conv.reduce((s,c)=>s+c.spend,0);
   const convActionCount = conv.reduce((s,c)=>s+c.actionCount,0);
-  const avgCpa = convActionCount ? totalSpend/convActionCount : 0;
+  const avgEfficiency = totalSpend ? convActionCount/totalSpend*10000 : 0;
   const totalShopValue = conv.reduce((s,c)=>s+c.shopValue,0);
   const avgRoas = totalSpend ? totalShopValue/totalSpend*100 : 0;
 
@@ -1339,10 +1336,11 @@ function computeInvestmentGuidance(creatives, ds, agg){
     reasonUp = c => 'ROAS '+fmtPct(c.roas,0)+' · 계정 평균('+fmtPct(avgRoas,0)+') 대비 우수';
     reasonDown = c => c.actionCount===0 ? (fmtWon(c.spend)+' 지출에도 전환 없음') : ('ROAS '+fmtPct(c.roas,0)+' · 계정 평균 대비 저조');
   } else {
-    scaleUp = pool.filter(c=>c.actionCount>0 && c.cpa<=avgCpa*0.85).sort((a,b)=>a.cpa-b.cpa).slice(0,3);
-    scaleDown = pool.filter(c=>c.actionCount===0 || c.cpa>avgCpa*1.3).sort((a,b)=>b.spend-a.spend).slice(0,3);
-    reasonUp = c => 'CPA '+fmtWon(c.cpa)+' · 계정 평균('+fmtWon(avgCpa)+') 대비 효율적';
-    reasonDown = c => c.actionCount===0 ? (fmtWon(c.spend)+' 지출에도 전환 없음') : ('CPA '+fmtWon(c.cpa)+' · 계정 평균 대비 비효율');
+    const eff = c => c.spend ? c.actionCount/c.spend*10000 : 0;
+    scaleUp = pool.filter(c=>c.actionCount>0 && eff(c)>=avgEfficiency*1.15).sort((a,b)=>eff(b)-eff(a)).slice(0,3);
+    scaleDown = pool.filter(c=>c.actionCount===0 || eff(c)<avgEfficiency*0.7).sort((a,b)=>b.spend-a.spend).slice(0,3);
+    reasonUp = c => '만원당 전환 '+eff(c).toFixed(2)+'건 · 계정 평균('+avgEfficiency.toFixed(2)+'건) 대비 효율적';
+    reasonDown = c => c.actionCount===0 ? (fmtWon(c.spend)+' 지출에도 전환 없음') : ('만원당 전환 '+eff(c).toFixed(2)+'건 · 계정 평균 대비 저조');
   }
 
   const primaryUnit = hasShopping ? '%' : '건';
@@ -1428,13 +1426,12 @@ function renderCampaignTable(rows, events){
     });
   });
   const list = [...map.values()].sort((a,b)=>b.spend-a.spend);
-  let html = '<div class="section"><div class="section-head"><div class="section-title">캠페인별 성과</div></div><div class="table-wrap"><table><thead><tr><th>캠페인</th><th class="num">노출</th><th class="num">클릭</th><th class="num">CTR</th><th class="num">지출</th><th class="num">CPC</th><th class="num">결과</th><th class="num">CPA</th>'+(hasShopping?'<th class="num">ROAS</th>':'')+'</tr></thead><tbody>';
+  let html = '<div class="section"><div class="section-head"><div class="section-title">캠페인별 성과</div></div><div class="table-wrap"><table><thead><tr><th>캠페인</th><th class="num">노출</th><th class="num">클릭</th><th class="num">CTR</th><th class="num">지출</th><th class="num">CPC</th><th class="num">결과</th>'+(hasShopping?'<th class="num">ROAS</th>':'')+'</tr></thead><tbody>';
   list.forEach(g=>{
     const ctr = g.impressions? g.clicks/g.impressions*100:0;
     const cpc = g.clicks? g.spend/g.clicks:0;
-    const cpa = g.actionCount? g.spend/g.actionCount:0;
     const roas = g.spend? g.shopValue/g.spend*100:0;
-    html += '<tr><td class="name-cell">'+esc(g.campaign)+'</td><td class="num">'+fmtNum(g.impressions)+'</td><td class="num">'+fmtNum(g.clicks)+'</td><td class="num">'+fmtPct(ctr)+'</td><td class="num">'+fmtWon(g.spend)+'</td><td class="num">'+(g.clicks?fmtWon(cpc):'—')+'</td><td class="num">'+fmtNum(g.results)+'</td><td class="num">'+(g.actionCount?fmtWon(cpa):'—')+'</td>'
+    html += '<tr><td class="name-cell">'+esc(g.campaign)+'</td><td class="num">'+fmtNum(g.impressions)+'</td><td class="num">'+fmtNum(g.clicks)+'</td><td class="num">'+fmtPct(ctr)+'</td><td class="num">'+fmtWon(g.spend)+'</td><td class="num">'+(g.clicks?fmtWon(cpc):'—')+'</td><td class="num">'+fmtNum(g.results)+'</td>'
       +(hasShopping?('<td class="num">'+(g.spend?fmtPct(roas,0):'—')+'</td>'):'')+'</tr>';
   });
   html += '</tbody></table></div></div>';
@@ -1467,18 +1464,18 @@ function exportExcel(){
         if(e.type==='shopping') g.shopValue += r.events[e.name].value;
       });
     });
-    const aoa = [['캠페인','노출','클릭','CTR(%)','지출','CPC','결과','CPA',...(hasShopping?['ROAS(%)']:[])]];
+    const aoa = [['캠페인','노출','클릭','CTR(%)','지출','CPC','결과',...(hasShopping?['ROAS(%)']:[])]];
     [...map.values()].sort((a,b)=>b.spend-a.spend).forEach(g=>{
       const ctr = g.impressions? g.clicks/g.impressions*100:0;
       const roas = g.spend? g.shopValue/g.spend*100:0;
       aoa.push([g.campaign,Math.round(g.impressions),Math.round(g.clicks),+ctr.toFixed(2),Math.round(g.spend),
-        g.clicks?Math.round(g.spend/g.clicks):'',Math.round(g.results),g.actionCount?Math.round(g.spend/g.actionCount):'',
+        g.clicks?Math.round(g.spend/g.clicks):'',Math.round(g.results),
         ...(hasShopping?[g.spend?+roas.toFixed(1):'']:[])]);
     });
     return aoa;
   })();
 
-  // 요약 (KPI summary — mirrors the top KPI cards + DB/쇼핑 성과 blocks on screen)
+  // 전체지표 (KPI summary — mirrors the top KPI cards + DB/쇼핑 성과 blocks on screen)
   const agg = aggregate(rows, events);
   const convAgg = conversionActionAgg(rows, events);
   const dbTotal = dbEvents.reduce((s,e)=>s+agg.events[e.name].count,0);
@@ -1487,7 +1484,6 @@ function exportExcel(){
     ['지표','값'],
     ['지출 금액', Math.round(agg.spend)], ['노출수', Math.round(agg.impressions)], ['클릭수', Math.round(agg.clicks)],
     ['CTR(%)', +agg.ctr.toFixed(2)], ['CPC', Math.round(agg.cpc)], ['전환수', Math.round(convAgg.actionCount)],
-    ['CPA', convAgg.actionCount?Math.round(convAgg.cpa):''],
   ];
   if(dbTotal>0){
     dbEvents.forEach(e=>{ if(agg.events[e.name].count>0) summary.push([e.name+' 수', Math.round(agg.events[e.name].count)]); });
@@ -1499,34 +1495,33 @@ function exportExcel(){
     summary.push(['구매 전환값', Math.round(shopValueTotal)]);
     summary.push(['ROAS(%)', agg.spend?+roas.toFixed(1):'']);
   }
-  sheets['요약'] = summary;
+  sheets['전체지표'] = summary;
 
-  // DB / 쇼핑 세부 테이블 (화면의 이벤트별 표와 동일, 리마크 포함)
+  // 소재지표 (캠페인/광고그룹/광고명 단위 상세 — 화면의 이벤트별 표와 동일, 리마크 포함)
   const buildEventSheet = (evList, prefix) => {
     const includeRoas = prefix==='shopping';
-    const header = ['캠페인','광고그룹','소재','노출','클릭','CTR(%)','지출','CPC',...evList.map(e=>e.name),'CPA',...(includeRoas?['ROAS(%)']:[]),'리마크'];
+    const header = ['캠페인','광고그룹','소재','노출','클릭','CTR(%)','지출','CPC',...evList.map(e=>e.name),...(includeRoas?['ROAS(%)']:[]),'리마크'];
     const aoa = [header];
     creatives.forEach(c=>{
       const key = 'w_'+prefix+'_'+c.campaign+'_'+c.adset+'_'+c.ad;
       aoa.push([c.campaign,c.adset,c.ad,Math.round(c.impressions),Math.round(c.clicks),+c.ctr.toFixed(2),Math.round(c.spend),
         c.clicks?Math.round(c.cpc):'',
         ...evList.map(e=>Math.round((c.events[e.name]||{count:0}).count)),
-        c.actionCount?Math.round(c.cpa):'',
         ...(includeRoas?[c.spend?+c.roas.toFixed(1):'']:[]),
         state.remarks[key]||'']);
     });
     return aoa;
   };
-  if(dbEvents.length && dbTotal>0) sheets['DB'] = buildEventSheet(dbEvents,'db');
-  if(shopEvents.length && shopTotal>0) sheets['쇼핑'] = buildEventSheet(shopEvents,'shopping');
+  if(dbEvents.length && dbTotal>0) sheets['소재지표(DB)'] = buildEventSheet(dbEvents,'db');
+  if(shopEvents.length && shopTotal>0) sheets['소재지표(쇼핑)'] = buildEventSheet(shopEvents,'shopping');
 
-  // 소재성과 (소재 성과 분석 섹션과 동일한 우수/저조 분류 포함 — 화면과 동일한 로직 재사용)
+  // 성과분석 (소재 성과 분석 섹션과 동일한 우수/저조 분류 포함 — 화면과 동일한 로직 재사용)
   const conv = creatives.filter(c=>c.bucket==='conversion' && c.spend>0);
   const traffic = creatives.filter(c=>c.bucket==='traffic' && c.spend>0);
   let convGroups = {good:[],bad:[]}, trafficGroups = {good:[],bad:[]};
   if(conv.length){
-    const metricKey = hasShopping ? 'roas' : 'cpa';
-    const dir = hasShopping ? 'desc' : 'asc';
+    const metricKey = hasShopping ? 'roas' : 'actionCount';
+    const dir = 'desc';
     const th = state.thresholds || {primaryGood:null, primaryBad:null};
     let customClassify = null;
     if(thresholdsActive(th)){
@@ -1540,23 +1535,23 @@ function exportExcel(){
   const badKeys = new Set([...convGroups.bad, ...trafficGroups.bad].map(creativeKey));
   const classifyLabel = c => goodKeys.has(creativeKey(c)) ? '우수' : (badKeys.has(creativeKey(c)) ? '저조' : '');
 
-  const creativeHeader = ['캠페인','광고그룹','소재','구분','분류','노출','클릭','CTR(%)','지출','CPC','결과','CPA',...(hasShopping?['ROAS(%)']:[])];
+  const creativeHeader = ['캠페인','광고그룹','소재','구분','분류','노출','클릭','CTR(%)','지출','CPC','결과',...(hasShopping?['ROAS(%)']:[])];
   const creativeAoa = [creativeHeader];
   creatives.slice().sort((a,b)=>b.spend-a.spend).forEach(c=>{
     creativeAoa.push([c.campaign,c.adset,c.ad,c.bucket==='conversion'?'전환':'트래픽',classifyLabel(c),
       Math.round(c.impressions),Math.round(c.clicks),+c.ctr.toFixed(2),Math.round(c.spend),c.clicks?Math.round(c.cpc):'',
-      Math.round(c.results),c.actionCount?Math.round(c.cpa):'',
+      Math.round(c.results),
       ...(hasShopping?[c.spend?+c.roas.toFixed(1):'']:[])]);
   });
-  sheets['소재성과'] = creativeAoa;
+  sheets['성과분석'] = creativeAoa;
 
-  // 투자방향제안 (소재 투자 방향 제안 섹션과 동일)
+  // 캠페인 소재투자 방향제안 (소재 투자 방향 제안 섹션과 동일)
   const guidance = computeInvestmentGuidance(creatives, ds, agg);
   if(guidance && guidance.hasAny){
     const aoa = [['분류','소재','캠페인','사유']];
     guidance.scaleUp.forEach(c=> aoa.push(['예산 확대 추천', c.ad, c.campaign, guidance.reasonUp(c)]));
     guidance.scaleDown.forEach(c=> aoa.push(['축소·교체 검토', c.ad, c.campaign, guidance.reasonDown(c)]));
-    sheets['투자방향제안'] = aoa;
+    sheets['캠페인 소재투자 방향제안'] = aoa;
   }
 
   sheets['캠페인별성과'] = campaignAoa;
@@ -1604,5 +1599,91 @@ function exportHtmlSnapshot(){
 
   const blob = new Blob([html], {type:'text/html'});
   downloadBlob(blob, ds.advertiser+'_'+isWeeklyLabel+'_'+periodEnd+'.html');
+}
+
+function loadScriptOnce(src){
+  return new Promise((resolve, reject)=>{
+    const existing = document.querySelector('script[data-dyn-src="'+src+'"]');
+    if(existing){ existing.addEventListener('load', resolve); existing.addEventListener('error', reject); if(existing.dataset.loaded) resolve(); return; }
+    const s = document.createElement('script');
+    s.src = src; s.dataset.dynSrc = src;
+    s.onload = ()=>{ s.dataset.loaded = '1'; resolve(); };
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+async function ensurePdfLibs(){
+  if(window.jspdf && window.html2canvas) return;
+  await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+  await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+  if(!window.jspdf || !window.html2canvas) throw new Error('PDF 변환 모듈을 불러오지 못했습니다.');
+}
+
+async function exportPdf(){
+  const btn = document.getElementById('btnPdf');
+  const original = btn.textContent;
+  btn.textContent = '⏳ PDF 생성 중...';
+  btn.disabled = true;
+  try {
+    await ensurePdfLibs();
+    await renderPdfSnapshot();
+  } catch(e){
+    console.error('PDF export failed, falling back to print dialog', e);
+    alert('실시간 PDF 변환 모듈을 불러오지 못해 인쇄 방식으로 전환합니다.\n인쇄 대화상자에서 "PDF로 저장"을 선택해주세요.');
+    window.print();
+  } finally {
+    btn.textContent = original;
+    btn.disabled = false;
+  }
+}
+
+async function renderPdfSnapshot(){
+  const isWeekly = state.mode==='weekly';
+  const viewEl = document.getElementById(isWeekly ? 'weeklyView' : 'monthlyView');
+  const ds = state.dataset;
+  const isWeeklyLabel = isWeekly ? '주간보고' : '월간보고';
+  const period = isWeekly ? periodByKey(state.weekKey) : monthByKey(state.monthKey);
+  const periodEnd = period ? period.end : '';
+  const periodLabelText = isWeekly ? periodLabel(period) : (period ? monthLabel(state.monthKey)+' ('+period.start.replace(/-/g,'.')+' ~ '+period.end.replace(/-/g,'.')+')' : '');
+
+  // Textareas don't rasterize reliably in html2canvas, so bake their live
+  // values into plain styled divs before capture (same approach as the
+  // HTML snapshot export).
+  const clone = viewEl.cloneNode(true);
+  const liveInputs = viewEl.querySelectorAll('.remark-input, #monthlyNoteArea');
+  const cloneInputs = clone.querySelectorAll('.remark-input, #monthlyNoteArea');
+  liveInputs.forEach((live, i) => {
+    const c = cloneInputs[i];
+    const div = document.createElement('div');
+    div.className = c.className;
+    div.style.cssText = 'white-space:pre-wrap;padding:6px 8px;min-height:1.4em;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);font-size:inherit;color:var(--ink)';
+    div.textContent = live.value || '';
+    c.replaceWith(div);
+  });
+
+  const header = document.createElement('div');
+  header.style.cssText = 'display:flex;align-items:center;gap:10px;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--border)';
+  header.innerHTML = '<div style="font-size:17px;font-weight:800">'+esc(ds.advertiser)+'</div>'
+    + '<span class="media-badge">Meta 배너광고</span>'
+    + '<span style="font-size:12.5px;color:var(--ink-muted)">'+esc(periodLabelText)+'</span>';
+
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:fixed;left:-99999px;top:0;width:1240px;background:var(--bg);padding:28px 24px 80px;box-sizing:border-box;';
+  wrap.appendChild(header);
+  wrap.appendChild(clone);
+  document.body.appendChild(wrap);
+
+  try {
+    const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#f4f5f9';
+    const canvas = await window.html2canvas(wrap, { scale: 2, backgroundColor: bg, useCORS: true });
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ unit:'px', format:[canvas.width, canvas.height], hotfixes:['px_scaling'] });
+    const imgData = canvas.toDataURL('image/jpeg', 0.92);
+    pdf.addImage(imgData, 'JPEG', 0, 0, canvas.width, canvas.height);
+    const blob = pdf.output('blob');
+    downloadBlob(blob, ds.advertiser+'_'+isWeeklyLabel+'_'+periodEnd+'.pdf');
+  } finally {
+    document.body.removeChild(wrap);
+  }
 }
 </script>
