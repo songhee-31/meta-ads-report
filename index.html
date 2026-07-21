@@ -669,13 +669,11 @@ function downloadBlob(blob, filename){
     document.body.removeChild(a);
   } catch(e){}
   // Some sandboxed embeds (e.g. artifact iframes without allow-downloads)
-  // silently swallow the anchor click with no error. Opening the blob in a
-  // new tab is a second path to the same result, since the browser can't
-  // render xlsx/pdf inline and will offer to save it instead.
-  try { window.open(url, '_blank', 'noopener'); } catch(e){}
-  // Always surface a manual link too — if both automatic paths were
-  // silently blocked by the host page's sandbox, this is the only way
-  // the user actually gets the file.
+  // silently swallow the anchor click with no error, so a manual link is
+  // always shown as a fallback too. It must NOT auto-open — in a normal
+  // (non-sandboxed) browser the <a download> click above already succeeds,
+  // and opening the blob URL again would trigger a second, duplicate
+  // download of the same file.
   const banner = document.getElementById('downloadBanner');
   banner.hidden = false;
   banner.innerHTML = '📄 <span>다운로드가 시작되지 않았다면</span> <a href="'+url+'" download="'+esc(filename)+'" target="_blank" rel="noopener">여기를 클릭해 '+esc(filename)+' 받기</a><button class="db-close" id="dbClose" aria-label="닫기">×</button>';
