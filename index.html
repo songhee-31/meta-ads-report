@@ -138,6 +138,11 @@ a{color:inherit}
 .threshold-field input:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:transparent}
 .threshold-field .unit{color:var(--ink-faint);font-size:11.5px}
 
+/* ---------- Download fallback banner ---------- */
+.download-banner{display:flex;align-items:center;gap:10px;background:var(--accent-soft);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 16px;margin-bottom:16px;font-size:13px}
+.download-banner a{color:var(--accent-ink);font-weight:700;text-decoration:underline}
+.download-banner .db-close{margin-left:auto;background:none;border:none;color:var(--ink-muted);cursor:pointer;font-size:16px;line-height:1;padding:0 4px}
+
 /* ---------- Generic layout ---------- */
 .section{margin-bottom:26px}
 .section-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap}
@@ -196,12 +201,25 @@ td.sub-cell{white-space:normal;max-width:180px;color:var(--ink-muted);font-size:
 .footer-note{text-align:center;color:var(--ink-faint);font-size:11.5px;padding:22px 0 4px}
 
 @media print{
-  body{background:#fff}
+  :root{
+    --accent:#0a5cff; --accent-ink:#0a3fa8; --accent-soft:#e9f0ff; --accent-2:#7c4dff; --accent-2-soft:#f2edff;
+    --bg:#ffffff; --surface:#ffffff; --surface-2:#f7f8fb; --border:#dde1ea;
+    --ink:#171a2b; --ink-muted:#6b7180; --ink-faint:#9aa0b1;
+    --good:#16884d; --good-soft:#e8f8ef; --good-border:#bfe8d2;
+    --warn:#b26a00; --warn-soft:#fff4e0; --warn-border:#f3d9a3;
+    --bad:#c62b3a; --bad-soft:#fdecee; --bad-border:#f4c3c9;
+  }
+  *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;color-adjust:exact !important}
+  body{background:#fff;font-size:12px}
   .topbar{position:static;box-shadow:none}
-  .btn,#uploadScreen{display:none !important}
-  .card,.table-wrap,.creative-card,.kpi{box-shadow:none !important;break-inside:avoid}
+  .btn,#uploadScreen,.tabs{display:none !important}
+  .card,.table-wrap,.creative-card,.kpi,.insight-box{box-shadow:none !important;break-inside:avoid}
   .section{break-inside:avoid}
   #app{max-width:none;padding:0 6mm}
+  .kpi-grid{grid-template-columns:repeat(auto-fit,minmax(95px,1fr)) !important;gap:8px}
+  .creative-grid{grid-template-columns:repeat(auto-fit,minmax(165px,1fr)) !important;gap:8px}
+  table{font-size:10.5px}
+  .remark-input{border:1px solid var(--border);resize:none}
   @page{size:A4;margin:12mm 10mm}
 }
 [hidden]{display:none !important}
@@ -222,18 +240,16 @@ td.sub-cell{white-space:normal;max-width:180px;color:var(--ink-muted);font-size:
     <div id="uploadError"></div>
 
     <div class="upload-threshold">
-      <div class="tb-label">소재 분류 기준 (선택 — 비워두면 계정 평균 대비 자동 분류, CPA·ROAS(또는 전환수) 함께 적용 가능)</div>
+      <div class="tb-label">소재 분류 기준 (선택 — 비워두면 계정 평균 대비 자동 분류)</div>
       <div class="threshold-row">
         <span class="threshold-row-label">우수 소재</span>
         <div class="threshold-field"><label>ROAS/전환수 —</label><input type="number" id="uploadThPrimaryGood" placeholder="예: 300 / 5"><span class="unit">이상</span></div>
-        <div class="threshold-field"><label>CPA —</label><input type="number" id="uploadThCpaGood" placeholder="예: 5000"><span class="unit">원 이하</span></div>
       </div>
       <div class="threshold-row">
         <span class="threshold-row-label">저조 소재</span>
         <div class="threshold-field"><label>ROAS/전환수 —</label><input type="number" id="uploadThPrimaryBad" placeholder="예: 150 / 1"><span class="unit">미만</span></div>
-        <div class="threshold-field"><label>CPA —</label><input type="number" id="uploadThCpaBad" placeholder="예: 15000"><span class="unit">원 초과</span></div>
       </div>
-      <div class="upload-threshold-note">쇼핑형 광고주는 ROAS(%), DB형 광고주는 전환수(건)로 자동 판별됩니다. CPA는 두 유형 모두 공통 적용됩니다. 두 조건을 함께 입력하면 우수는 둘 다 충족, 저조는 하나라도 해당 시 표시됩니다.</div>
+      <div class="upload-threshold-note">쇼핑형 광고주는 ROAS(%), DB형 광고주는 전환수(건) 기준으로 자동 판별됩니다.</div>
     </div>
 
     <div class="hint-row">
@@ -257,10 +273,13 @@ td.sub-cell{white-space:normal;max-width:180px;color:var(--ink-muted);font-size:
           <button class="tab-btn" data-mode="monthly">월간 보고</button>
         </div>
         <button class="btn" id="btnExcel">⬇ 엑셀</button>
+        <button class="btn" id="btnHtml">⬇ HTML</button>
         <button class="btn" id="btnPdf">⬇ PDF</button>
         <button class="btn ghost" id="btnReset">새 파일</button>
       </div>
     </div>
+
+    <div id="downloadBanner" class="download-banner" hidden></div>
 
     <div id="weeklyView"></div>
     <div id="monthlyView" hidden></div>
@@ -637,12 +656,30 @@ function buildXlsxBlob(sheetsObj){
   const zipBytes = buildZipStore(files);
   return new Blob([zipBytes], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
 }
+let lastDownloadUrl = null;
 function downloadBlob(blob, filename){
+  if(lastDownloadUrl) URL.revokeObjectURL(lastDownloadUrl);
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+  lastDownloadUrl = url;
+  try {
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  } catch(e){}
+  // Some sandboxed embeds (e.g. artifact iframes without allow-downloads)
+  // silently swallow the anchor click with no error. Opening the blob in a
+  // new tab is a second path to the same result, since the browser can't
+  // render xlsx/pdf inline and will offer to save it instead.
+  try { window.open(url, '_blank', 'noopener'); } catch(e){}
+  // Always surface a manual link too — if both automatic paths were
+  // silently blocked by the host page's sandbox, this is the only way
+  // the user actually gets the file.
+  const banner = document.getElementById('downloadBanner');
+  banner.hidden = false;
+  banner.innerHTML = '📄 <span>다운로드가 시작되지 않았다면</span> <a href="'+url+'" download="'+esc(filename)+'" target="_blank" rel="noopener">여기를 클릭해 '+esc(filename)+' 받기</a><button class="db-close" id="dbClose" aria-label="닫기">×</button>';
+  document.getElementById('dbClose').addEventListener('click', ()=>{ banner.hidden = true; });
 }
 
 /* ============================================================
@@ -895,7 +932,7 @@ const state = {
   mode: 'weekly',
   remarks: {},   // rowKey -> text
   monthlyNote: '',
-  thresholds: { primaryGood: null, primaryBad: null, cpaGood: null, cpaBad: null },
+  thresholds: { primaryGood: null, primaryBad: null },
 };
 
 const dropzone = document.getElementById('dropzone');
@@ -939,8 +976,6 @@ function handleFile(file){
       state.thresholds = {
         primaryGood: readNum('uploadThPrimaryGood'),
         primaryBad: readNum('uploadThPrimaryBad'),
-        cpaGood: readNum('uploadThCpaGood'),
-        cpaBad: readNum('uploadThCpaBad'),
       };
       showReport();
     }catch(err){
@@ -984,6 +1019,7 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
   });
 });
 document.getElementById('btnExcel').addEventListener('click', exportExcel);
+document.getElementById('btnHtml').addEventListener('click', exportHtmlSnapshot);
 document.getElementById('btnPdf').addEventListener('click', ()=>{ window.print(); });
 
 function showReport(){
@@ -1212,7 +1248,7 @@ function renderCreativeSection(creatives, ds){
   if(conv.length){
     const metricKey = hasShopping ? 'roas' : 'cpa';
     const dir = hasShopping ? 'desc' : 'asc';
-    const th = state.thresholds || {primaryGood:null, primaryBad:null, cpaGood:null, cpaBad:null};
+    const th = state.thresholds || {primaryGood:null, primaryBad:null};
     let customClassify = null;
     if(thresholdsActive(th)){
       const pool = investmentPool(conv);
@@ -1220,15 +1256,17 @@ function renderCreativeSection(creatives, ds){
     }
     html += rankedCreativeBlock('전환 소재', conv, metricKey, dir, c => [
       ['전환수', fmtNum(c.actionCount)],
-      ['CPA', c.actionCount? fmtWon(c.cpa): '—'],
+      ['CTR', fmtPct(c.ctr)],
+      ['노출', fmtNum(c.impressions)],
       ['CPC', c.clicks? fmtWon(c.cpc): '—'],
-      hasShopping ? ['ROAS', c.spend? fmtPct(c.roas,0): '—'] : ['CTR', fmtPct(c.ctr)],
+      ...(hasShopping ? [['ROAS', c.spend? fmtPct(c.roas,0): '—']] : []),
       ['지출', fmtWon(c.spend)],
     ], c => c.actionCount>0, customClassify);
   }
   if(traffic.length){
     html += rankedCreativeBlock('트래픽 소재 (랜딩페이지 조회 목적)', traffic, 'cpc', 'asc', c => [
       ['CTR', fmtPct(c.ctr)],
+      ['노출', fmtNum(c.impressions)],
       ['CPC', fmtWon(c.cpc)],
       ['클릭수', fmtNum(c.clicks)],
       ['지출', fmtWon(c.spend)],
@@ -1256,46 +1294,29 @@ function investmentPool(conv){
   const meaningful = conv.filter(c=>c.spend>=threshold);
   return meaningful.length>=3 ? meaningful : conv;
 }
-function thresholdsActive(th){ return th.primaryGood!=null || th.primaryBad!=null || th.cpaGood!=null || th.cpaBad!=null; }
+function thresholdsActive(th){ return th.primaryGood!=null || th.primaryBad!=null; }
 function classifyByThresholds(pool, hasShopping, th){
   const primaryOf = hasShopping ? (c=>c.roas) : (c=>c.actionCount);
-  const hasGoodCriteria = th.primaryGood!=null || th.cpaGood!=null;
-  const hasBadCriteria = th.primaryBad!=null || th.cpaBad!=null;
-  const good = hasGoodCriteria ? pool.filter(c=>{
-    const checks = [];
-    if(th.primaryGood!=null) checks.push(primaryOf(c) >= th.primaryGood);
-    if(th.cpaGood!=null) checks.push(c.actionCount>0 && c.cpa <= th.cpaGood);
-    return checks.every(Boolean);
-  }).sort((a,b)=>primaryOf(b)-primaryOf(a)) : [];
-  const bad = hasBadCriteria ? pool.filter(c=>{
-    const checks = [];
-    if(th.primaryBad!=null) checks.push(primaryOf(c) < th.primaryBad);
-    if(th.cpaBad!=null) checks.push(c.actionCount===0 || c.cpa > th.cpaBad);
-    return checks.some(Boolean);
-  }).sort((a,b)=>primaryOf(a)-primaryOf(b)) : [];
-  return { good, bad, hasGoodCriteria, hasBadCriteria };
+  const good = th.primaryGood!=null
+    ? pool.filter(c=>primaryOf(c) >= th.primaryGood).sort((a,b)=>primaryOf(b)-primaryOf(a))
+    : [];
+  const bad = th.primaryBad!=null
+    ? pool.filter(c=>primaryOf(c) < th.primaryBad).sort((a,b)=>primaryOf(a)-primaryOf(b))
+    : [];
+  return { good, bad, hasGoodCriteria: th.primaryGood!=null, hasBadCriteria: th.primaryBad!=null };
 }
 function thresholdReason(c, hasShopping, th, kind){
-  const parts = [];
-  const primaryVal = hasShopping ? c.roas : c.actionCount;
   const primaryLabel = hasShopping ? ('ROAS '+fmtPct(c.roas,0)) : ('전환수 '+fmtNum(c.actionCount)+'건');
   if(kind==='good'){
-    // AND logic: creative satisfies every active check, so all active checks are truthfully reportable
-    if(th.primaryGood!=null) parts.push(primaryLabel+' (기준 '+fmtNum(th.primaryGood)+(hasShopping?'%':'건')+' 이상)');
-    if(th.cpaGood!=null) parts.push('CPA '+(c.actionCount?fmtWon(c.cpa):'—')+' (기준 '+fmtWon(th.cpaGood)+' 이하)');
-  } else {
-    // OR logic: only report the check(s) this specific creative actually failed
-    if(th.primaryBad!=null && primaryVal < th.primaryBad) parts.push(primaryLabel+' (기준 '+fmtNum(th.primaryBad)+(hasShopping?'%':'건')+' 미만)');
-    if(th.cpaBad!=null && (c.actionCount===0 || c.cpa > th.cpaBad)){
-      parts.push(c.actionCount===0 ? (fmtWon(c.spend)+' 지출에도 전환 없음') : ('CPA '+fmtWon(c.cpa)+' (기준 '+fmtWon(th.cpaBad)+' 초과)'));
-    }
+    return primaryLabel+' (기준 '+fmtNum(th.primaryGood)+(hasShopping?'%':'건')+' 이상)';
   }
-  return parts.join(' · ');
+  if(c.actionCount===0) return fmtWon(c.spend)+' 지출에도 전환 없음';
+  return primaryLabel+' (기준 '+fmtNum(th.primaryBad)+(hasShopping?'%':'건')+' 미만)';
 }
-function renderInvestmentGuidance(creatives, ds, agg){
+function computeInvestmentGuidance(creatives, ds, agg){
   const hasShopping = ds.events.some(e=>e.type==='shopping');
   const conv = creatives.filter(c=>c.bucket==='conversion' && c.spend>0);
-  if(!conv.length) return '';
+  if(!conv.length) return null;
   const pool = investmentPool(conv);
   const totalSpend = conv.reduce((s,c)=>s+c.spend,0);
   const convActionCount = conv.reduce((s,c)=>s+c.actionCount,0);
@@ -1303,7 +1324,7 @@ function renderInvestmentGuidance(creatives, ds, agg){
   const totalShopValue = conv.reduce((s,c)=>s+c.shopValue,0);
   const avgRoas = totalSpend ? totalShopValue/totalSpend*100 : 0;
 
-  const th = state.thresholds || {primaryGood:null, primaryBad:null, cpaGood:null, cpaBad:null};
+  const th = state.thresholds || {primaryGood:null, primaryBad:null};
   const usingCustom = thresholdsActive(th);
 
   let scaleUp, scaleDown, reasonUp, reasonDown;
@@ -1323,27 +1344,31 @@ function renderInvestmentGuidance(creatives, ds, agg){
     reasonUp = c => 'CPA '+fmtWon(c.cpa)+' · 계정 평균('+fmtWon(avgCpa)+') 대비 효율적';
     reasonDown = c => c.actionCount===0 ? (fmtWon(c.spend)+' 지출에도 전환 없음') : ('CPA '+fmtWon(c.cpa)+' · 계정 평균 대비 비효율');
   }
-  if(!scaleUp.length && !scaleDown.length) return '';
 
   const primaryUnit = hasShopping ? '%' : '건';
   const primaryLabel = hasShopping ? 'ROAS' : '전환수';
   const customParts = [];
   if(th.primaryGood!=null) customParts.push('우수 '+primaryLabel+' '+fmtNum(th.primaryGood)+primaryUnit+' 이상');
   if(th.primaryBad!=null) customParts.push('저조 '+primaryLabel+' '+fmtNum(th.primaryBad)+primaryUnit+' 미만');
-  if(th.cpaGood!=null) customParts.push('우수 CPA '+fmtWon(th.cpaGood)+' 이하');
-  if(th.cpaBad!=null) customParts.push('저조 CPA '+fmtWon(th.cpaBad)+' 초과');
   const subLabel = usingCustom
     ? '업로드 시 설정한 기준 — '+customParts.join(' · ')
     : '지출 대비 효율(계정 평균 대비)을 기준으로 예산 재배분 방향을 제안합니다';
+  const upEmptyMsg = usingCustom
+    ? (th.primaryGood==null ? '우수 기준을 입력하지 않았습니다.' : '설정한 기준을 충족하는 소재가 없습니다.')
+    : '계정 평균을 뚜렷하게 상회하는 소재가 아직 없습니다. 데이터가 더 쌓인 뒤 판단을 권장합니다.';
+  const downEmptyMsg = usingCustom
+    ? (th.primaryBad==null ? '저조 기준을 입력하지 않았습니다.' : '설정한 기준에 해당하는 소재가 없습니다.')
+    : '뚜렷한 저효율 소재가 발견되지 않았습니다.';
+
+  return { hasAny: scaleUp.length>0 || scaleDown.length>0, scaleUp, scaleDown, reasonUp, reasonDown, subLabel, upEmptyMsg, downEmptyMsg };
+}
+function renderInvestmentGuidance(creatives, ds, agg){
+  const data = computeInvestmentGuidance(creatives, ds, agg);
+  if(!data || !data.hasAny) return '';
+  const { scaleUp, scaleDown, reasonUp, reasonDown, subLabel, upEmptyMsg, downEmptyMsg } = data;
 
   let html = '<div class="section"><div class="section-head"><div class="section-title">소재 투자 방향 제안</div><div class="section-sub">'+esc(subLabel)+'</div></div>';
   html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">';
-  const upEmptyMsg = usingCustom
-    ? (th.primaryGood==null && th.cpaGood==null ? '우수 기준을 입력하지 않았습니다.' : '설정한 기준을 충족하는 소재가 없습니다.')
-    : '계정 평균을 뚜렷하게 상회하는 소재가 아직 없습니다. 데이터가 더 쌓인 뒤 판단을 권장합니다.';
-  const downEmptyMsg = usingCustom
-    ? (th.primaryBad==null && th.cpaBad==null ? '저조 기준을 입력하지 않았습니다.' : '설정한 기준에 해당하는 소재가 없습니다.')
-    : '뚜렷한 저효율 소재가 발견되지 않았습니다.';
   html += '<div class="insight-box" style="background:var(--good-soft);border-color:var(--good-border)"><strong>📈 예산 확대 추천</strong><ul style="margin:8px 0 0;padding-left:18px">'
     + (scaleUp.length ? scaleUp.map(c=>'<li><b>'+esc(c.ad)+'</b> — '+reasonUp(c)+'</li>').join('') : '<li>'+upEmptyMsg+'</li>')
     + '</ul></div>';
@@ -1354,15 +1379,9 @@ function renderInvestmentGuidance(creatives, ds, agg){
   return html;
 }
 function creativeKey(c){ return c.campaign+'||'+c.adset+'||'+c.ad; }
-function rankedCreativeBlock(title, list, metricKey, dir, metricsFn, hasResultFn, customClassify){
+function computeRankedGroups(list, metricKey, dir, hasResultFn, customClassify){
   if(customClassify){
-    const { good, bad } = customClassify;
-    let html = '<div style="margin-top:10px"><div style="font-weight:700;font-size:13px;margin-bottom:8px">'+esc(title)+'</div><div class="creative-grid">';
-    good.forEach(c=> html += creativeCard(c, 'good', '우수', metricsFn));
-    bad.forEach(c=> html += creativeCard(c, 'bad', '저조', metricsFn));
-    if(!good.length && !bad.length) html += '<div class="empty-note" style="grid-column:1/-1">설정한 기준에 해당하는 소재가 없습니다.</div>';
-    html += '</div></div>';
-    return html;
+    return { good: customClassify.good, bad: customClassify.bad, zero: [], isCustom: true };
   }
   const totalSpend = list.reduce((s,c)=>s+c.spend,0);
   const threshold = Math.max(totalSpend*0.015, 1);
@@ -1375,11 +1394,15 @@ function rankedCreativeBlock(title, list, metricKey, dir, metricsFn, hasResultFn
   const good = sorted.slice(0,3);
   const goodKeys = new Set(good.map(creativeKey));
   let bad = zero.length ? zero.slice(0,3) : sorted.slice().reverse().filter(c=>!goodKeys.has(creativeKey(c))).slice(0,3);
-
+  return { good, bad, zero, isCustom: false };
+}
+function rankedCreativeBlock(title, list, metricKey, dir, metricsFn, hasResultFn, customClassify){
+  const { good, bad, zero, isCustom } = computeRankedGroups(list, metricKey, dir, hasResultFn, customClassify);
   let html = '<div style="margin-top:10px"><div style="font-weight:700;font-size:13px;margin-bottom:8px">'+esc(title)+'</div><div class="creative-grid">';
   good.forEach(c=> html += creativeCard(c, 'good', '우수', metricsFn));
   bad.forEach(c=> html += creativeCard(c, 'bad', zero.includes(c) ? '전환 없음' : '저조', metricsFn));
-  if(!bad.length) html += '<div class="empty-note" style="grid-column:1/-1">비교할 만큼 소재 수가 충분하지 않아 저조 소재는 표시하지 않았습니다.</div>';
+  if(!good.length && !bad.length && isCustom) html += '<div class="empty-note" style="grid-column:1/-1">설정한 기준에 해당하는 소재가 없습니다.</div>';
+  else if(!bad.length && !isCustom) html += '<div class="empty-note" style="grid-column:1/-1">비교할 만큼 소재 수가 충분하지 않아 저조 소재는 표시하지 않았습니다.</div>';
   html += '</div></div>';
   return html;
 }
@@ -1455,54 +1478,131 @@ function exportExcel(){
     return aoa;
   })();
 
-  if(isWeekly){
-    const buildSheet = (evList, prefix) => {
-      const includeRoas = prefix==='shopping';
-      const header = ['캠페인','광고그룹','소재','노출','클릭','CTR(%)','지출','CPC',...evList.map(e=>e.name),'CPA',...(includeRoas?['ROAS(%)']:[]),'리마크'];
-      const aoa = [header];
-      creatives.forEach(c=>{
-        const key = 'w_'+prefix+'_'+c.campaign+'_'+c.adset+'_'+c.ad;
-        aoa.push([c.campaign,c.adset,c.ad,Math.round(c.impressions),Math.round(c.clicks),+c.ctr.toFixed(2),Math.round(c.spend),
-          c.clicks?Math.round(c.cpc):'',
-          ...evList.map(e=>Math.round((c.events[e.name]||{count:0}).count)),
-          c.actionCount?Math.round(c.cpa):'',
-          ...(includeRoas?[c.spend?+c.roas.toFixed(1):'']:[]),
-          state.remarks[key]||'']);
-      });
-      return aoa;
-    };
-    if(dbEvents.length) sheets['DB'] = buildSheet(dbEvents,'db');
-    if(shopEvents.length) sheets['쇼핑'] = buildSheet(shopEvents,'shopping');
-    if(!Object.keys(sheets).length) sheets['주간보고'] = buildSheet([], 'all');
-    sheets['캠페인별성과'] = campaignAoa;
-  } else {
-    const agg = aggregate(rows, events);
-    const convAgg = conversionActionAgg(rows, events);
-    const summary = [
-      ['지표','값'],
-      ['지출 금액', Math.round(agg.spend)], ['노출수', Math.round(agg.impressions)], ['클릭수', Math.round(agg.clicks)],
-      ['CTR(%)', +agg.ctr.toFixed(2)], ['CPC', Math.round(agg.cpc)], ['전환수', Math.round(convAgg.actionCount)],
-      ['CPA', convAgg.actionCount?Math.round(convAgg.cpa):''],
-    ];
-    if(hasShopping){
-      const shopValueTotal = shopEvents.reduce((s,e)=>s+agg.events[e.name].value,0);
-      const roas = agg.spend? shopValueTotal/agg.spend*100:0;
-      summary.push(['ROAS(%)', agg.spend?+roas.toFixed(1):'']);
-    }
-    sheets['요약'] = summary;
-    const creativeHeader = ['캠페인','소재','구분','노출','클릭','CTR(%)','지출','CPC','결과','CPA',...(hasShopping?['ROAS(%)']:[])];
-    const creativeAoa = [creativeHeader];
-    creatives.slice().sort((a,b)=>b.spend-a.spend).forEach(c=>{
-      creativeAoa.push([c.campaign,c.ad,c.bucket==='conversion'?'전환':'트래픽',Math.round(c.impressions),Math.round(c.clicks),
-        +c.ctr.toFixed(2),Math.round(c.spend),c.clicks?Math.round(c.cpc):'',Math.round(c.results),c.actionCount?Math.round(c.cpa):'',
-        ...(hasShopping?[c.spend?+c.roas.toFixed(1):'']:[])]);
-    });
-    sheets['소재성과'] = creativeAoa;
-    sheets['캠페인별성과'] = campaignAoa;
-    sheets['총평'] = [['총평 및 다음 달 제안'],[state.monthlyNote||'']];
+  // 요약 (KPI summary — mirrors the top KPI cards + DB/쇼핑 성과 blocks on screen)
+  const agg = aggregate(rows, events);
+  const convAgg = conversionActionAgg(rows, events);
+  const dbTotal = dbEvents.reduce((s,e)=>s+agg.events[e.name].count,0);
+  const shopTotal = shopEvents.reduce((s,e)=>s+agg.events[e.name].count,0);
+  const summary = [
+    ['지표','값'],
+    ['지출 금액', Math.round(agg.spend)], ['노출수', Math.round(agg.impressions)], ['클릭수', Math.round(agg.clicks)],
+    ['CTR(%)', +agg.ctr.toFixed(2)], ['CPC', Math.round(agg.cpc)], ['전환수', Math.round(convAgg.actionCount)],
+    ['CPA', convAgg.actionCount?Math.round(convAgg.cpa):''],
+  ];
+  if(dbTotal>0){
+    dbEvents.forEach(e=>{ if(agg.events[e.name].count>0) summary.push([e.name+' 수', Math.round(agg.events[e.name].count)]); });
   }
+  if(shopTotal>0){
+    const shopValueTotal = shopEvents.reduce((s,e)=>s+agg.events[e.name].value,0);
+    const roas = agg.spend? shopValueTotal/agg.spend*100:0;
+    summary.push(['구매수', Math.round(shopTotal)]);
+    summary.push(['구매 전환값', Math.round(shopValueTotal)]);
+    summary.push(['ROAS(%)', agg.spend?+roas.toFixed(1):'']);
+  }
+  sheets['요약'] = summary;
+
+  // DB / 쇼핑 세부 테이블 (화면의 이벤트별 표와 동일, 리마크 포함)
+  const buildEventSheet = (evList, prefix) => {
+    const includeRoas = prefix==='shopping';
+    const header = ['캠페인','광고그룹','소재','노출','클릭','CTR(%)','지출','CPC',...evList.map(e=>e.name),'CPA',...(includeRoas?['ROAS(%)']:[]),'리마크'];
+    const aoa = [header];
+    creatives.forEach(c=>{
+      const key = 'w_'+prefix+'_'+c.campaign+'_'+c.adset+'_'+c.ad;
+      aoa.push([c.campaign,c.adset,c.ad,Math.round(c.impressions),Math.round(c.clicks),+c.ctr.toFixed(2),Math.round(c.spend),
+        c.clicks?Math.round(c.cpc):'',
+        ...evList.map(e=>Math.round((c.events[e.name]||{count:0}).count)),
+        c.actionCount?Math.round(c.cpa):'',
+        ...(includeRoas?[c.spend?+c.roas.toFixed(1):'']:[]),
+        state.remarks[key]||'']);
+    });
+    return aoa;
+  };
+  if(dbEvents.length && dbTotal>0) sheets['DB'] = buildEventSheet(dbEvents,'db');
+  if(shopEvents.length && shopTotal>0) sheets['쇼핑'] = buildEventSheet(shopEvents,'shopping');
+
+  // 소재성과 (소재 성과 분석 섹션과 동일한 우수/저조 분류 포함 — 화면과 동일한 로직 재사용)
+  const conv = creatives.filter(c=>c.bucket==='conversion' && c.spend>0);
+  const traffic = creatives.filter(c=>c.bucket==='traffic' && c.spend>0);
+  let convGroups = {good:[],bad:[]}, trafficGroups = {good:[],bad:[]};
+  if(conv.length){
+    const metricKey = hasShopping ? 'roas' : 'cpa';
+    const dir = hasShopping ? 'desc' : 'asc';
+    const th = state.thresholds || {primaryGood:null, primaryBad:null};
+    let customClassify = null;
+    if(thresholdsActive(th)){
+      const pool = investmentPool(conv);
+      customClassify = classifyByThresholds(pool, hasShopping, th);
+    }
+    convGroups = computeRankedGroups(conv, metricKey, dir, c=>c.actionCount>0, customClassify);
+  }
+  if(traffic.length) trafficGroups = computeRankedGroups(traffic, 'cpc', 'asc', c=>c.clicks>0, null);
+  const goodKeys = new Set([...convGroups.good, ...trafficGroups.good].map(creativeKey));
+  const badKeys = new Set([...convGroups.bad, ...trafficGroups.bad].map(creativeKey));
+  const classifyLabel = c => goodKeys.has(creativeKey(c)) ? '우수' : (badKeys.has(creativeKey(c)) ? '저조' : '');
+
+  const creativeHeader = ['캠페인','광고그룹','소재','구분','분류','노출','클릭','CTR(%)','지출','CPC','결과','CPA',...(hasShopping?['ROAS(%)']:[])];
+  const creativeAoa = [creativeHeader];
+  creatives.slice().sort((a,b)=>b.spend-a.spend).forEach(c=>{
+    creativeAoa.push([c.campaign,c.adset,c.ad,c.bucket==='conversion'?'전환':'트래픽',classifyLabel(c),
+      Math.round(c.impressions),Math.round(c.clicks),+c.ctr.toFixed(2),Math.round(c.spend),c.clicks?Math.round(c.cpc):'',
+      Math.round(c.results),c.actionCount?Math.round(c.cpa):'',
+      ...(hasShopping?[c.spend?+c.roas.toFixed(1):'']:[])]);
+  });
+  sheets['소재성과'] = creativeAoa;
+
+  // 투자방향제안 (소재 투자 방향 제안 섹션과 동일)
+  const guidance = computeInvestmentGuidance(creatives, ds, agg);
+  if(guidance && guidance.hasAny){
+    const aoa = [['분류','소재','캠페인','사유']];
+    guidance.scaleUp.forEach(c=> aoa.push(['예산 확대 추천', c.ad, c.campaign, guidance.reasonUp(c)]));
+    guidance.scaleDown.forEach(c=> aoa.push(['축소·교체 검토', c.ad, c.campaign, guidance.reasonDown(c)]));
+    sheets['투자방향제안'] = aoa;
+  }
+
+  sheets['캠페인별성과'] = campaignAoa;
+  if(!isWeekly) sheets['총평'] = [['총평 및 다음 달 제안'],[state.monthlyNote||'']];
+
   const blob = buildXlsxBlob(sheets);
   const label = isWeekly ? '주간보고' : '월간보고';
   downloadBlob(blob, ds.advertiser+'_'+label+'_'+(period?period.end:'')+'.xlsx');
+}
+
+function exportHtmlSnapshot(){
+  const isWeekly = state.mode==='weekly';
+  const viewEl = document.getElementById(isWeekly ? 'weeklyView' : 'monthlyView');
+  const clone = viewEl.cloneNode(true);
+
+  // cloneNode does not carry over live form-control values (only the
+  // initial content), so remark/notes textareas must be synced by hand
+  // before serializing, or the snapshot would show stale/empty text.
+  const liveInputs = viewEl.querySelectorAll('.remark-input, #monthlyNoteArea');
+  const cloneInputs = clone.querySelectorAll('.remark-input, #monthlyNoteArea');
+  liveInputs.forEach((live, i) => {
+    const c = cloneInputs[i];
+    c.textContent = live.value;
+    c.setAttribute('readonly', 'readonly');
+  });
+
+  const ds = state.dataset;
+  const isWeeklyLabel = isWeekly ? '주간보고' : '월간보고';
+  const period = isWeekly ? periodByKey(state.weekKey) : monthByKey(state.monthKey);
+  const periodEnd = period ? period.end : '';
+  const periodLabelText = isWeekly ? periodLabel(period) : (period ? monthLabel(state.monthKey)+' ('+period.start.replace(/-/g,'.')+' ~ '+period.end.replace(/-/g,'.')+')' : '');
+  const title = ds.advertiser+' '+isWeeklyLabel+' — '+periodLabelText;
+  const styleTag = document.querySelector('style').outerHTML;
+  const themeAttr = document.documentElement.getAttribute('data-theme');
+
+  const header = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--border)">'
+    + '<div style="font-size:17px;font-weight:800">'+esc(ds.advertiser)+'</div>'
+    + '<span class="media-badge">Meta 배너광고</span>'
+    + '<span style="font-size:12.5px;color:var(--ink-muted)">'+esc(periodLabelText)+'</span>'
+    + '</div>';
+
+  const html = '<!doctype html><html lang="ko"'+(themeAttr?(' data-theme="'+themeAttr+'"'):'')+'>'
+    + '<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+esc(title)+'</title>'+styleTag+'</head>'
+    + '<body><div id="app" style="max-width:1240px;margin:0 auto;padding:28px 24px 80px">'+header+clone.outerHTML+'</div></body></html>';
+
+  const blob = new Blob([html], {type:'text/html'});
+  downloadBlob(blob, ds.advertiser+'_'+isWeeklyLabel+'_'+periodEnd+'.html');
 }
 </script>
