@@ -1091,6 +1091,7 @@ function renderWeekly(){
   html += kpiCard('클릭수', fmtNum(agg.clicks));
   html += kpiCard('CTR', fmtPct(agg.ctr));
   html += kpiCard('CPC', fmtWon(agg.cpc));
+  html += kpiCard('CPM', fmtWon(agg.cpm));
   html += kpiCard('전환수', fmtNum(convAgg.actionCount));
   html += '</div></div>';
 
@@ -1192,6 +1193,7 @@ function renderMonthly(){
   html += kpiCard('클릭수', fmtNum(agg.clicks), delta(agg.clicks, cmpAgg && cmpAgg.clicks, true));
   html += kpiCard('CTR', fmtPct(agg.ctr), delta(agg.ctr, cmpAgg && cmpAgg.ctr, true));
   html += kpiCard('CPC', fmtWon(agg.cpc), delta(agg.cpc, cmpAgg && cmpAgg.cpc, false));
+  html += kpiCard('CPM', fmtWon(agg.cpm), delta(agg.cpm, cmpAgg && cmpAgg.cpm, false));
   html += kpiCard('전환수', fmtNum(convAgg.actionCount), delta(convAgg.actionCount, cmpConvAgg && cmpConvAgg.actionCount, true));
   html += '</div></div>';
 
@@ -1443,12 +1445,13 @@ function renderCampaignTable(rows, events){
     });
   });
   const list = [...map.values()].sort((a,b)=>b.spend-a.spend);
-  let html = '<div class="section"><div class="section-head"><div class="section-title">캠페인별 성과</div></div><div class="table-wrap"><table><thead><tr><th>캠페인</th><th class="num">노출</th><th class="num">클릭</th><th class="num">CTR</th><th class="num">지출</th><th class="num">CPC</th><th class="num">결과</th>'+(hasShopping?'<th class="num">ROAS</th>':'')+'</tr></thead><tbody>';
+  let html = '<div class="section"><div class="section-head"><div class="section-title">캠페인별 성과</div></div><div class="table-wrap"><table><thead><tr><th>캠페인</th><th class="num">노출</th><th class="num">클릭</th><th class="num">CTR</th><th class="num">지출</th><th class="num">CPC</th><th class="num">CPM</th><th class="num">결과</th>'+(hasShopping?'<th class="num">ROAS</th>':'')+'</tr></thead><tbody>';
   list.forEach(g=>{
     const ctr = g.impressions? g.clicks/g.impressions*100:0;
     const cpc = g.clicks? g.spend/g.clicks:0;
+    const cpm = g.impressions? g.spend/g.impressions*1000:0;
     const roas = g.spend? g.shopValue/g.spend*100:0;
-    html += '<tr><td class="name-cell">'+esc(g.campaign)+'</td><td class="num">'+fmtNum(g.impressions)+'</td><td class="num">'+fmtNum(g.clicks)+'</td><td class="num">'+fmtPct(ctr)+'</td><td class="num">'+fmtWon(g.spend)+'</td><td class="num">'+(g.clicks?fmtWon(cpc):'—')+'</td><td class="num">'+fmtNum(g.results)+'</td>'
+    html += '<tr><td class="name-cell">'+esc(g.campaign)+'</td><td class="num">'+fmtNum(g.impressions)+'</td><td class="num">'+fmtNum(g.clicks)+'</td><td class="num">'+fmtPct(ctr)+'</td><td class="num">'+fmtWon(g.spend)+'</td><td class="num">'+(g.clicks?fmtWon(cpc):'—')+'</td><td class="num">'+(g.impressions?fmtWon(cpm):'—')+'</td><td class="num">'+fmtNum(g.results)+'</td>'
       +(hasShopping?('<td class="num">'+(g.spend?fmtPct(roas,0):'—')+'</td>'):'')+'</tr>';
   });
   html += '</tbody></table></div></div>';
@@ -1481,12 +1484,13 @@ function exportExcel(){
         if(e.type==='shopping') g.shopValue += r.events[e.name].value;
       });
     });
-    const aoa = [['캠페인','노출','클릭','CTR(%)','지출','CPC','결과',...(hasShopping?['ROAS(%)']:[])]];
+    const aoa = [['캠페인','노출','클릭','CTR(%)','지출','CPC','CPM','결과',...(hasShopping?['ROAS(%)']:[])]];
     [...map.values()].sort((a,b)=>b.spend-a.spend).forEach(g=>{
       const ctr = g.impressions? g.clicks/g.impressions*100:0;
+      const cpm = g.impressions? g.spend/g.impressions*1000:0;
       const roas = g.spend? g.shopValue/g.spend*100:0;
       aoa.push([g.campaign,Math.round(g.impressions),Math.round(g.clicks),+ctr.toFixed(2),Math.round(g.spend),
-        g.clicks?Math.round(g.spend/g.clicks):'',Math.round(g.results),
+        g.clicks?Math.round(g.spend/g.clicks):'',g.impressions?Math.round(cpm):'',Math.round(g.results),
         ...(hasShopping?[g.spend?+roas.toFixed(1):'']:[])]);
     });
     return aoa;
@@ -1500,7 +1504,7 @@ function exportExcel(){
   const summary = [
     ['지표','값'],
     ['지출 금액', Math.round(agg.spend)], ['노출수', Math.round(agg.impressions)], ['클릭수', Math.round(agg.clicks)],
-    ['CTR(%)', +agg.ctr.toFixed(2)], ['CPC', Math.round(agg.cpc)], ['전환수', Math.round(convAgg.actionCount)],
+    ['CTR(%)', +agg.ctr.toFixed(2)], ['CPC', Math.round(agg.cpc)], ['CPM', Math.round(agg.cpm)], ['전환수', Math.round(convAgg.actionCount)],
   ];
   if(dbTotal>0){
     dbEvents.forEach(e=>{ if(agg.events[e.name].count>0) summary.push([e.name+' 수', Math.round(agg.events[e.name].count)]); });
