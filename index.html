@@ -1014,6 +1014,9 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
     document.getElementById('weeklyView').hidden = state.mode!=='weekly';
     document.getElementById('monthlyView').hidden = state.mode!=='monthly';
     renderPeriodPills();
+    // Re-render on every tab switch (not just on upload) so the visible
+    // view can never drift stale relative to the underlying state.
+    if(state.mode==='weekly') renderWeekly(); else renderMonthly();
   });
 });
 document.getElementById('btnExcel').addEventListener('click', exportExcel);
@@ -1192,25 +1195,35 @@ function renderMonthly(){
   html += kpiCard('전환수', fmtNum(convAgg.actionCount), delta(convAgg.actionCount, cmpConvAgg && cmpConvAgg.actionCount, true));
   html += '</div></div>';
 
-  if(dbTotal>0){
-    const activeDbEvents = dbEvents.filter(e=>agg.events[e.name].count>0);
-    html += '<div class="section"><div class="section-head"><div class="section-title">DB 성과 <span class="type-chip db">DB</span></div></div><div class="kpi-grid">';
-    activeDbEvents.forEach(e=>{
-      html += kpiCard(e.name+' 수', fmtNum(agg.events[e.name].count));
-    });
-    if(activeDbEvents.length>1) html += kpiCard('DB 총 전환수', fmtNum(dbTotal));
-    html += '</div></div>';
+  if(dbEvents.length){
+    html += '<div class="section"><div class="section-head"><div class="section-title">DB 성과 <span class="type-chip db">DB</span></div></div>';
+    if(dbTotal>0){
+      const activeDbEvents = dbEvents.filter(e=>agg.events[e.name].count>0);
+      html += '<div class="kpi-grid">';
+      activeDbEvents.forEach(e=>{
+        html += kpiCard(e.name+' 수', fmtNum(agg.events[e.name].count));
+      });
+      if(activeDbEvents.length>1) html += kpiCard('DB 총 전환수', fmtNum(dbTotal));
+      html += '</div>';
+    } else {
+      html += '<div class="empty-note">이 기간에는 DB 관련 전환 데이터가 없습니다.</div>';
+    }
+    html += '</div>';
   }
-  if(shopTotal>0 || events.some(e=>e.type==='shopping')){
-    const shopValueTotal = shopEvents.reduce((s,e)=>s+agg.events[e.name].value,0);
-    const roas = agg.spend ? (shopValueTotal/agg.spend*100) : 0;
+  if(shopEvents.length){
+    html += '<div class="section"><div class="section-head"><div class="section-title">쇼핑 성과 <span class="type-chip shopping">쇼핑</span></div></div>';
     if(shopTotal>0){
-      html += '<div class="section"><div class="section-head"><div class="section-title">쇼핑 성과 <span class="type-chip shopping">쇼핑</span></div></div><div class="kpi-grid">';
+      const shopValueTotal = shopEvents.reduce((s,e)=>s+agg.events[e.name].value,0);
+      const roas = agg.spend ? (shopValueTotal/agg.spend*100) : 0;
+      html += '<div class="kpi-grid">';
       html += kpiCard('구매수', fmtNum(shopTotal));
       html += kpiCard('구매 전환값', fmtWon(shopValueTotal));
       html += kpiCard('ROAS', fmtPct(roas,0));
-      html += '</div></div>';
+      html += '</div>';
+    } else {
+      html += '<div class="empty-note">이 기간에는 쇼핑(구매전환) 관련 전환 데이터가 없습니다.</div>';
     }
+    html += '</div>';
   }
 
   html += renderCreativeSection(creatives, ds);
@@ -1249,8 +1262,14 @@ function renderCreativeSection(creatives, ds){
       const pool = investmentPool(conv);
       customClassify = classifyByThresholds(pool, hasShopping, th);
     }
+    // Break the combined 전환수 down by individual event type (예약/문의/구매 등)
+    // instead of one lumped number, so mixed DB+쇼핑 계정에서 각 액션이 드러나도록 함.
+    const activeConvEvents = ds.events.filter(e =>
+      (e.type==='db' || e.type==='shopping') && conv.some(c => (c.events[e.name]||{count:0}).count>0));
     html += rankedCreativeBlock('전환 소재', conv, metricKey, dir, c => [
-      ['전환수', fmtNum(c.actionCount)],
+      ...(activeConvEvents.length
+        ? activeConvEvents.map(e => [e.name, fmtNum((c.events[e.name]||{count:0}).count)])
+        : [['전환수', fmtNum(c.actionCount)]]),
       ['CTR', fmtPct(c.ctr)],
       ['노출', fmtNum(c.impressions)],
       ['CPC', c.clicks? fmtWon(c.cpc): '—'],
