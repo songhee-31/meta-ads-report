@@ -824,7 +824,14 @@ function groupDailyIntoWeeks(periods){
   return [...map.values()].map(w=>({...w, days:7})).sort((a,b)=> b.end.localeCompare(a.end));
 }
 function computeWeekBuckets(periods){
-  if(periods.length>0 && periods.every(p=>p.days<=1)){
+  // Meta's export sometimes splits a single continuous date range into
+  // several sub-week chunks (e.g. it breaks exactly at a month boundary,
+  // producing a 5-day + 2-day pair for what is really one 7-day week).
+  // Merge any periods short enough to plausibly be pieces of one calendar
+  // week — not just literal single-day rows — into their Monday-start
+  // week, so they don't show as separate, confusing pills. A period that's
+  // already a full month or more (days>7) is left as-is.
+  if(periods.length>0 && periods.every(p=>p.days<=7)){
     return { buckets: groupDailyIntoWeeks(periods), isCalendarWeek: true };
   }
   return { buckets: periods, isCalendarWeek: false };
@@ -1721,4 +1728,3 @@ async function renderPdfSnapshot(){
   }
 }
 </script>
- 
