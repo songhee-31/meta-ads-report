@@ -1254,7 +1254,13 @@ function renderCreativeSection(creatives, ds){
   const traffic = creatives.filter(c=>c.bucket==='traffic' && c.spend>0);
   let html = '<div class="section"><div class="section-head"><div class="section-title">소재(크리에이티브) 성과 분석</div><div class="section-sub">지출 규모가 유의미한 소재를 기준으로 우수·저조 소재를 구분했습니다</div></div>';
 
-  const hasShopping = ds.events.some(e=>e.type==='shopping');
+  // Whether ROAS is a meaningful classification metric depends on whether
+  // THESE conversion creatives actually generated purchase value — not
+  // merely whether the account has a shopping event column configured
+  // somewhere. A DB-focused account with an unused/zero shopping column
+  // would otherwise get ranked by an always-0% ROAS instead of 예약 수,
+  // producing arbitrary-looking 우수/저조 badges.
+  const hasShopping = conv.some(c=>c.shopValue>0);
   if(conv.length){
     const metricKey = hasShopping ? 'roas' : 'actionCount';
     const dir = 'desc';
@@ -1330,9 +1336,12 @@ function thresholdReason(c, hasShopping, th, kind){
   return primaryLabel+' (기준 '+fmtNum(th.primaryBad)+(hasShopping?'%':'건')+' 미만)';
 }
 function computeInvestmentGuidance(creatives, ds, agg){
-  const hasShopping = ds.events.some(e=>e.type==='shopping');
   const conv = creatives.filter(c=>c.bucket==='conversion' && c.spend>0);
   if(!conv.length) return null;
+  // Same fix as renderCreativeSection: only treat this as a "shopping"
+  // conversion pool if it actually generated purchase value, not merely
+  // because the account has a shopping event column defined somewhere.
+  const hasShopping = conv.some(c=>c.shopValue>0);
   const pool = investmentPool(conv);
   const totalSpend = conv.reduce((s,c)=>s+c.spend,0);
   const convActionCount = conv.reduce((s,c)=>s+c.actionCount,0);
@@ -1539,15 +1548,19 @@ function exportExcel(){
   // 성과분석 (소재 성과 분석 섹션과 동일한 우수/저조 분류 포함 — 화면과 동일한 로직 재사용)
   const conv = creatives.filter(c=>c.bucket==='conversion' && c.spend>0);
   const traffic = creatives.filter(c=>c.bucket==='traffic' && c.spend>0);
+  // Same fix as on-screen: classify by ROAS only if this conversion pool
+  // actually generated purchase value, not just because the account has a
+  // shopping event column configured somewhere (see renderCreativeSection).
+  const convHasShopping = conv.some(c=>c.shopValue>0);
   let convGroups = {good:[],bad:[]}, trafficGroups = {good:[],bad:[]};
   if(conv.length){
-    const metricKey = hasShopping ? 'roas' : 'actionCount';
+    const metricKey = convHasShopping ? 'roas' : 'actionCount';
     const dir = 'desc';
     const th = state.thresholds || {primaryGood:null, primaryBad:null};
     let customClassify = null;
     if(thresholdsActive(th)){
       const pool = investmentPool(conv);
-      customClassify = classifyByThresholds(pool, hasShopping, th);
+      customClassify = classifyByThresholds(pool, convHasShopping, th);
     }
     convGroups = computeRankedGroups(conv, metricKey, dir, c=>c.actionCount>0, customClassify);
   }
@@ -1556,13 +1569,13 @@ function exportExcel(){
   const badKeys = new Set([...convGroups.bad, ...trafficGroups.bad].map(creativeKey));
   const classifyLabel = c => goodKeys.has(creativeKey(c)) ? '우수' : (badKeys.has(creativeKey(c)) ? '저조' : '');
 
-  const creativeHeader = ['캠페인','광고그룹','소재','구분','분류','노출','클릭','CTR(%)','지출','CPC','결과',...(hasShopping?['ROAS(%)']:[])];
+  const creativeHeader = ['캠페인','광고그룹','소재','구분','분류','노출','클릭','CTR(%)','지출','CPC','결과',...(convHasShopping?['ROAS(%)']:[])];
   const creativeAoa = [creativeHeader];
   creatives.slice().sort((a,b)=>b.spend-a.spend).forEach(c=>{
     creativeAoa.push([c.campaign,c.adset,c.ad,c.bucket==='conversion'?'전환':'트래픽',classifyLabel(c),
       Math.round(c.impressions),Math.round(c.clicks),+c.ctr.toFixed(2),Math.round(c.spend),c.clicks?Math.round(c.cpc):'',
       Math.round(c.results),
-      ...(hasShopping?[c.spend?+c.roas.toFixed(1):'']:[])]);
+      ...(convHasShopping?[c.spend?+c.roas.toFixed(1):'']:[])]);
   });
   sheets['성과분석'] = creativeAoa;
 
